@@ -1,0 +1,13 @@
+# Build outputs / scratch
+/out/
+
+# Reference software stack checkout (aemfvp-a and friends)
+/fvp/stack/
+
+# Locally cloned kernel trees
+/kernel/linux/
+/kernel/*/linux-*/
+
+# Patch artefacts
+*.rej
+*.orig
