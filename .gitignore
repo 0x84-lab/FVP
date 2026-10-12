@@ -4,6 +4,10 @@
 # Reference software stack checkout (aemfvp-a and friends)
 /fvp/stack/
 
+# FVP installer + installed model
+FVP_Base_RevC*.tar.gz
+/fvp/install/
+
 # Locally cloned kernel trees
 /kernel/linux/
 /kernel/*/linux-*/

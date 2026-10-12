@@ -210,23 +210,62 @@ device or the virtual-device setup above.
 
 ## Relevance to this lab
 
-This repository currently contains **only this documentation summary** — no kernel configs,
-boot scripts, Makefile targets, Syzkaller/LibAFL harnesses, or artifact manifests are
-present. Treat the items below as the intended lab shape, subject to what is actually added.
+This repository implements a local Mali-kbase fuzzing lab. Implemented so far:
+
+- ✅ **Phase 1 — driver integration.** `scripts/integrate-mali.sh` integrates an Arm DDK
+  tree into a Linux kernel following the virtual-device guide recipe; validated for
+  `r41p0` and `r56p0`, `r31p0` rejected (its archive lacks the no-Mali backend sources).
+- ✅ **Phase 2 — boot stack.** Modern TF-A `fvp` platform with the kernel as BL33.
+  Upstream TF-A/U-Boot removed the `aemfvp-a` board, so the stack is
+  `BL1/BL2/BL31 → Linux Image → BusyBox initramfs` (`scripts/build-stack.sh`).
+- ✅ **Phase 3 — device tree.** `scripts/build-dtb.sh` splices the Mali "dummy model"
+  node (`fvp/dtb/mali-node.dts`) into the kernel's `fvp-base-revc.dtb` per the guide.
+- ✅ **Phase 4 — kernel.** `scripts/build-kernel.sh` builds Linux 5.15 LTS (arm64) with
+  the driver config fragments under `kernel/configs/`.
+- ✅ **Phase 5 — boot & smoke test.** `scripts/run-fvp.sh` and `scripts/check-mali.sh`
+  boot `FVP_Base_RevC-2xAEMvA` on the host and verify `/dev/mali0` appears.
+
+Not yet implemented: Phase 6 (Syzkaller) and Phase 7 (LibAFL) harnesses.
 
 ### What a local lab can provide
 
-- ✅ Kernel build with KASAN + KCOV.
-- ✅ ARM64 guest boot (QEMU `virt`, TCG).
-- ✅ Syzkaller framework (host tools + config validation).
-- ✅ LibAFL harness (standalone, structured input format).
+- ✅ Kernel build with the DDK's no-Mali ("dummy model") backend (`CONFIG_MALI_NO_MALI=y`).
+- ✅ KASAN/KCOV-capable arm64 guest kernel on an Arm FVP (Base RevC AEMvA) — KCOV is a
+  *lab-only* flag of `build-kernel.sh` (`--kcov`), never enabled in repro configs.
+- ✅ `/dev/mali0` probed from the Device Tree path (no x86 patches needed).
+- ⬜ Syzkaller framework (host tools + config validation).
+- ⬜ LibAFL harness (standalone, structured input format).
 
-### Bounty blockers for a stock QEMU `virt` lab
+### Bounty blockers that remain
 
-- ❌ No Mali GPU in QEMU `virt` or in public Arm FVPs → Kbase never probes.
-- ❌ No `/dev/mali0` without the virtual-device setup → fuzzers cannot reach the driver.
-- ❌ Kbase source requires an Arm account/download.
-- ❌ Physical device access is the alternative if virtual testing is not used.
+- ⬜ Kbase source requires an Arm account/download (DDK archives are GPL but obtained via
+  the bounty program landing page; provenance logged in `driver/manifest.json`).
+- ⬜ Real-GPU corner cases cannot be exercised on the FVP (dummy model only).
+
+### Directory layout (implemented)
+
+| Path | Purpose |
+|------|---------|
+| `driver/` + `driver/manifest.json` | DDK source archives (GPL-2.0) + registry |
+| `scripts/integrate-mali.sh` | Phase 1: DDK → kernel tree |
+| `scripts/build-kernel.sh` | Phase 4: 5.15 + config fragment → `out/<driver>/` |
+| `scripts/build-stack.sh` | Phase 2: TF-A + BusyBox initramfs |
+| `scripts/build-dtb.sh` | Phase 3: splice Mali node + `/chosen` |
+| `scripts/run-fvp.sh`, `scripts/check-mali.sh` | Phase 5: boot + smoke-test |
+| `fvp/dtb/mali-node.dts` | Mali node DT fragment |
+| `kernel/configs/kbase-r41.config`, `kbase-r56.config` | Driver config fragments |
+
+### Build & run
+
+```bash
+scripts/build-kernel.sh --driver r56          # Image, dtb, mali_kbase.ko
+scripts/build-stack.sh  --driver r56          # bl1.bin, fip.bin, rootfs.cpio.gz
+scripts/check-mali.sh   --driver r56          # boot FVP, expect /dev/mali0
+```
+
+Boot addresses on the FVP (TF-A `fvp` platform defaults): kernel at `0x80080000`
+(`PRELOADED_BL33_BASE`), DTB at `0x82000000` (`HW_CONFIG_BASE`), initramfs at
+`0x84000000` with `/chosen/linux,initrd-*` set by `build-dtb.sh`.
 
 ### Path to a bounty submission
 
