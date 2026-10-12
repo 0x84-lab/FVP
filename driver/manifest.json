@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "description": "Arm Mali GPU kernel driver (Kbase) source archives for the no-Mali (dummy model) virtual-platform fuzzing lab.",
+  "license": "GPL-2.0-only",
+  "license_file": "driver/product/kernel/license.txt",
+  "driver_subtree": "driver/product/kernel",
+  "kernel_target": "5.15",
+  "supported_drivers": ["r41", "r56"],
+  "drivers": {
+    "r41": {
+      "package_id": "AX504X08X-SW-99002",
+      "release_name": "r41p0-01eac0",
+      "file": "AX504X08X-SW-99002-r41p0-01eac0.tar.gz",
+      "format": "tar.gz",
+      "sha256": "8db5f86647073a6ffac092811af4dc90440db4d968c53da14aab0712080abdc9",
+      "size_bytes": 1104861,
+      "csf_support": true,
+      "dummy_model_sources": true,
+      "no_mali_default_gpu": "tMIx",
+      "no_mali_default_gpu_configurable": false,
+      "config_fragments": false,
+      "kconfig": "kernel/configs/kbase-r41.config",
+      "version_guards_max": "6.0.0",
+      "status": "supported"
+    },
+    "r56": {
+      "package_id": "VX504X08X-SW-99002",
+      "release_name": "r56p0-19eac0",
+      "file": "VX504X08X-SW-99002-r56p0-19eac0.tar",
+      "format": "tar",
+      "sha256": "dc09f708200fb06b4140d265c9337e58641530583903323e044a364a27b92190",
+      "size_bytes": 6758400,
+      "csf_support": true,
+      "dummy_model_sources": true,
+      "no_mali_default_gpu": "tMIx",
+      "no_mali_default_gpu_configurable": true,
+      "dummy_model_supported_gpus": ["tMIx", "tKRx"],
+      "config_fragments": true,
+      "config_fragment_dir": "driver/product/kernel/config/fragment",
+      "ioctl_doc": "driver/product/kernel/Documentation/ioctl-categories.rst",
+      "kconfig": "kernel/configs/kbase-r56.config",
+      "version_guards_max": "6.17.0",
+      "status": "supported"
+    },
+    "r31": {
+      "package_id": "VX504X08X-SW-99002",
+      "release_name": "r31p0-01eac0",
+      "file": "VX504X08X-SW-99002-r31p0-01eac0.tar",
+      "format": "tar",
+      "sha256": "cebedb3e71ed72627edcb36cedc3dc8c0df7533326309e0d6beefb8cfb1a16f6",
+      "size_bytes": 4720640,
+      "dummy_model_sources": false,
+      "status": "excluded",
+      "exclude_reason": "No-Mali build fails: backend/gpu/Kbuild references backend/gpu/mali_kbase_model_dummy.c and backend/gpu/mali_kbase_model_linux.c, but neither file is present in the archive."
+    }
+  }
+}
