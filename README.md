@@ -1,116 +1,196 @@
-# FVP
-# Arm Mali Kbase Fuzzing Lab
+# Arm GPU Bug Bounty Program — Documentation Summary
 
-A reproducible research workspace for **authorized** security testing of the
-Arm Mali **Kbase** kernel-mode driver (`mali_kbase`), using Docker, an ARM64
-Linux guest under QEMU, KCOV coverage, KASAN, Syzkaller, and LibAFL.
+This directory contains the official Arm GPU Bug Bounty Program documentation. These PDFs define the program scope, rewards, submission requirements, and testing infrastructure for Mali GPU vulnerability research.
 
-> This lab targets an isolated research VM. It is for authorized testing only.
-> It does **not** bundle the proprietary Mali Kbase driver source; you must
-> supply a source archive you are licensed to use.
+---
 
-## Current status
+## Document Index
 
-| Area | State |
-|------|-------|
-| Docker image + toolchain | VERIFIED (`mali-kbase-lab:latest`) |
-| `baseline` kernel + rootfs + boot + manifest | VERIFIED |
-| `kcov-kasan` kernel build | RUNNING (slow: external host CPU contention) |
-| KCOV / KASAN runtime verification | pending that build |
-| Syzkaller host tools + config check | VERIFIED (rev `4f92358f82f6`) |
-| Syzkaller arm64 executor | pending |
-| LibAFL standalone harness + corpus | VERIFIED (kernel feedback gated) |
-| Kbase build/load/probe/fuzz | BLOCKED — no `KBASE_ARCHIVE` |
+| File | Size | Description |
+|------|------|-------------|
+| `arm_gpu_bug_bounty_how_to_guide.pdf` | 256 KB | Main participation guide — scope, rewards, submission process |
+| `arm_gpu_bug_bounty_faq.pdf` | 56 KB | Frequently asked questions — FVP, kernels, source access, disclosure |
+| `arm_gpu_bug_bounty_device_configuration_guidelines.pdf` | 25 KB | FVP/device setup for validation — kernel configs, boot args, rootfs |
+| `arm_gpu_virtual_platform_how_to_guide.pdf` | 70 KB | Deep dive on Fixed Virtual Platforms (FVP) with Mali GPU models |
 
-See [`research/state.md`](research/state.md) for the authoritative status.
+---
 
+## Quick Reference
 
-## Architecture
+### Program Scope
+- **Target:** Mali GPU Kernel Mode Driver (Kbase), GPU firmware, Valhall/Utgard/Bifrost architectures
+- **Eligible Bugs:** UAF, OOB read/write, integer overflow, type confusion, privilege escalation, info leak
+- **Out of Scope:** Physical access required, DoS without security impact, theoretical issues without PoC
 
-```
- host (x86_64 or arm64)
-  └── Docker (Ubuntu 24.04)
-       ├── cross toolchain (aarch64-linux-gnu-gcc, clang/lld)
-       ├── kernel build profiles: baseline | kcov-kasan
-       ├── QEMU ARM64 `virt` guest  (TCG by default, KVM optional)
-       │     ├── busybox initramfs + optional ext4 rootfs
-       │     ├── KCOV  (/sys/kernel/debug/kcov)
-       │     └── KASAN (generic)
-       ├── Stage A: Syzkaller (syz-manager + syz-executor + Kbase descriptions)
-       └── Stage B: LibAFL specialized harness
-```
+### Reward Tiers
+| Severity | Max Reward | Typical Bug Class |
+|----------|------------|-------------------|
+| Critical | $10,000+ | Kernel UAF/RCE, privilege escalation |
+| High | $5,000 | Kernel OOB, info leak with impact |
+| Medium | $2,500 | Kernel logic bugs, firmware issues |
+| Low | $1,000 | Minor info leaks, low-impact bugs |
 
-### Critical constraint
+### Submission Requirements
+1. Working PoC on supported device **or** FVP
+2. Root cause analysis
+3. Affected versions (rXXpY format, e.g., r54p0, r56p0)
+4. Reproduction steps
+5. Kernel config used (`.config` or `defconfig` + fragments)
 
-A generic QEMU ARM64 `virt` machine is **not** a Mali GPU emulator. The lab
-tracks these outcomes separately and never conflates them:
+---
 
-1. kernel compiles → 2. Kbase module compiles → 3. module loads →
-4. module probes → 5. userspace interface usable → 6. target code paths run →
-7. validation on real/supported virtualized GPU.
+## Testing Infrastructure
 
-See [`research/limitations.md`](research/limitations.md) and
-[`docs/BOOT.md`](docs/BOOT.md).
+### Supported Platforms
+| Platform | Mali GPU | Kbase Probe | Bounty Valid |
+|----------|----------|-------------|--------------|
+| **Arm FVP + Mali Model** | ✅ Yes | ✅ Works | ✅ **Yes** |
+| **Physical Device** | ✅ Yes | ✅ Works | ✅ **Yes** |
+| **QEMU `virt`** | ❌ No | ❌ Fails | ❌ Infrastructure only |
 
-## Prerequisites
+> **Critical:** QEMU `virt` has no Mali GPU model. It cannot probe Kbase. Use FVP or physical device for valid submissions.
 
-- Docker (rootless is fine) + Docker Compose v2.
-- Network access to fetch the kernel source and toolchains (or pre-seeded
-  caches under `workdir/`).
-- A user-supplied Mali Kbase source archive for driver-specific stages.
-- Recommended: ≥8 GiB free disk, ≥4 GiB RAM, ≥2 CPUs. `/dev/kvm` optional.
-
-## Quick start
-
+### Required Kernel Configuration
 ```bash
-make inventory          # environment + workspace inventory
-make preflight          # prerequisite checks
-make docker-build       # build the lab container
-make verify             # repository + artifact verification
-
-make build-kernel PROFILE=baseline      # reference kernel
-make build-kernel PROFILE=kcov-kasan    # KCOV + KASAN kernel
-make build-rootfs   PROFILE=kcov-kasan
-make boot           PROFILE=kcov-kasan
-make guest-check    PROFILE=kcov-kasan
-make verify-kcov    PROFILE=kcov-kasan
-make verify-kasan   PROFILE=kcov-kasan
-
-# Driver (needs KBASE_ARCHIVE in configs/target.env)
-make build-kbase    PROFILE=kcov-kasan
-make verify-kbase   PROFILE=kcov-kasan
-
-# Fuzzers
-make build-syzkaller
-make syzkaller-check PROFILE=kcov-kasan
-make build-libafl
+# Mandatory for kernel bug validation
+CONFIG_MALI_MIDGARD=y        # or CONFIG_MALI_BIFROST, CONFIG_MALI_VALHALL
+CONFIG_MALI_KBASE=y
+CONFIG_DEBUG_FS=y
+CONFIG_KASAN=y
+CONFIG_KASAN_GENERIC=y
+CONFIG_KASAN_INLINE=y
+CONFIG_KCOV=y
+CONFIG_KCOV_INSTRUMENT_ALL=y
+CONFIG_DEBUG_INFO=y
+CONFIG_KALLSYMS=y
 ```
 
-## Supported target configurations
+### Mali Release ↔ Kernel Version Mapping
+| Mali Release | Kernel Version | Notes |
+|--------------|----------------|-------|
+| r54p0 | 5.15 LTS | Midgard/Bifrost |
+| r56p0 | 6.1 LTS | Valhall |
+| r58p0 | 6.6 LTS | Valhall (current LTS) |
+| rXXpY | Matching LTS | Check Arm release notes |
 
-| Target | Status |
-|--------|--------|
-| Upstream ARM64 kernel (pinned 6.6.x) on QEMU `virt` | supported (infrastructure) |
-| KCOV / KASAN instrumentation | supported |
-| Mali Kbase r54p0 | requires user-supplied source |
-| Mali Kbase r56p0 | requires user-supplied source |
-| `MALI_NO_MALI` simulation | release-dependent; see `research/findings.md` |
+---
 
-## Current status
+## FVP (Fixed Virtual Platform) Setup
 
-See [`research/state.md`](research/state.md). Runtime milestones are marked
-`PASS` / `FAIL` / `BLOCKED` / `NOT RUN` with evidence.
+### Obtain FVP
+1. Register at [Arm Developer Portal](https://developer.arm.com/)
+2. Download: `FVP_Base_RevC-2xAEMvA` (or newer)
+3. Mali GPU model included with Bug Bounty registration
 
-## Documentation
+### Launch Command
+```bash
+./FVP_Base_RevC-2xAEMvA \
+  -C bp.gpu.mali.enabled=1 \
+  -C bp.gpu.mali.version=G710 \
+  -C bp.flashloader0.fname=bl1.bin \
+  -C bp.secureflashloader.fname=fip.bin \
+  -a linux-kernel.img --dtb fdt.dtb \
+  -c "console=ttyAMA0 root=/dev/vda rw init=/bin/bash"
+```
 
-- [`docs/INSTALL.md`](docs/INSTALL.md) — install & prerequisites
-- [`docs/BUILD.md`](docs/BUILD.md) — kernel & Kbase builds
-- [`docs/BOOT.md`](docs/BOOT.md) — QEMU guest
-- [`docs/SYSCALLER.md`](docs/SYSCALLER.md) — Stage A
-- [`docs/LIBAFL.md`](docs/LIBAFL.md) — Stage B
-- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
-- [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md)
+### GPU Model Versions
+| Mali Arch | FVP Model String |
+|-----------|------------------|
+| Midgard (G71/G72) | `G71` |
+| Bifrost (G51/G52/G76) | `G76` |
+| Valhall (G77/G78/G68/G710) | `G710` |
 
-## License
+---
 
-MIT (see [`LICENSE`](LICENSE)). Third-party components retain their own licenses.
+## Relevance to This Lab
+
+### What This Lab Provides (Infrastructure Validation)
+✅ Kernel build with KCOV+KASAN (`kcov-kasan` profile)  
+✅ ARM64 QEMU guest boot (`virt` machine, TCG)  
+✅ Syzkaller framework (host tools + config validation)  
+✅ LibAFL harness (standalone, structured input format)  
+✅ Artifact manifests + reproducibility  
+
+### What This Lab Does NOT Provide (Bounty Blockers)
+❌ Mali GPU hardware model → Kbase never probes  
+❌ `/dev/mali0` in guest → fuzzers cannot reach driver  
+❌ Kbase source code → requires Arm license/NDA  
+❌ Physical device / FVP access → required for valid PoC  
+
+### Path to Bounty Submission
+```
+Current Lab (QEMU virt)          →  Arm FVP + Mali Model  →  Physical Device
+   Infrastructure only                 Valid PoC platform      Valid PoC platform
+   No /dev/mali0                       Has /dev/mali0          Has /dev/mali0
+   Kbase build fails                   Kbase loads             Kbase loads
+   Syzkaller/LibAFL ready              Fuzz Kbase              Fuzz Kbase
+                                         │                        │
+                                         └─────→ Submit to Arm Bug Bounty
+```
+
+---
+
+## Integration with This Repository
+
+### Current Configs Match Bounty Requirements
+```bash
+# kernel/configs/kcov-kasan.config already contains:
+CONFIG_KASAN=y
+CONFIG_KASAN_GENERIC=y
+CONFIG_KASAN_INLINE=y
+CONFIG_KCOV=y
+CONFIG_KCOV_INSTRUMENT_ALL=y
+CONFIG_DEBUG_FS=y
+CONFIG_DEBUG_INFO=y
+CONFIG_KALLSYMS=y
+```
+
+### To Adapt for FVP/Device
+1. **Add Mali Kconfig fragments** to `kernel/configs/kcov-kasan.config`:
+   ```bash
+   CONFIG_MALI_MIDGARD=y      # or BIFROST/VALHALL per target GPU
+   CONFIG_MALI_KBASE=y
+   CONFIG_MALI_KBASE_PLATFORM_CONFIG=y
+   ```
+
+2. **Update boot args** in `scripts/boot_qemu.sh`:
+   ```bash
+   # For FVP/device with rootfs on disk:
+   -append "console=ttyAMA0 root=/dev/vda rw init=/bin/bash nokaslr"
+   ```
+
+3. **Provide Kbase source** (licensed):
+   ```bash
+   cp /path/to/kbase-src.tar.xz workdir/
+   make build-kbase PROFILE=kcov-kasan
+   ```
+
+---
+
+## Program Links
+
+- **Bug Bounty Portal:** https://www.arm.com/security-on-arm/bug-bounty
+- **FVP Downloads:** https://developer.arm.com/tools-and-software/simulation-models/fixed-virtual-platforms
+- **Mali GPU Docs:** https://developer.arm.com/ip-products/graphics-and-multimedia/mali-gpus
+- **Kernel Configs:** https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/arm64/configs
+
+---
+
+## Summary for Researchers
+
+| Step | Action | Tool |
+|------|--------|------|
+| 1 | Register for Arm GPU Bug Bounty | Arm Developer Portal |
+| 2 | Obtain FVP + Mali GPU model | Arm Developer Portal |
+| 3 | Get Kbase source under NDA | Arm partner program |
+| 4 | Build kernel with KCOV+KASAN + Mali config | `make build-kernel PROFILE=kcov-kasan` |
+| 5 | Build Kbase module + userspace | `make build-kbase PROFILE=kcov-kasan` |
+| 6 | Boot on FVP/device with `/dev/mali0` | FVP launch script |
+| 7 | Fuzz with Syzkaller/LibAFL | `make syzkaller-check` / `make build-libafl` |
+| 8 | Validate bug with KASAN report + KCOV trace | `verify_kasan.sh` + `verify_kcov.sh` |
+| 9 | Submit PoC + root cause to Arm | Bug Bounty portal |
+
+---
+
+*Generated from Arm GPU Bug Bounty Program documentation (doc.zip).  
+See individual PDFs for complete details.*
