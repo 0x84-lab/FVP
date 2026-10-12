@@ -1,196 +1,291 @@
 # Arm GPU Bug Bounty Program — Documentation Summary
 
-This directory contains the official Arm GPU Bug Bounty Program documentation. These PDFs define the program scope, rewards, submission requirements, and testing infrastructure for Mali GPU vulnerability research.
+> **Status: corrected summary.** Verified against Arm's own documentation and the live
+> [Intigriti program page](https://app.intigriti.com/programs/arm/arm/detail) on 2026-10-12.
+> The official PDFs are distributed by Arm via that page and are **not** stored in this
+> repository.
+
+This note summarises the Arm GPU Bug Bounty Program — the Mali GPU Kernel Driver ("Kbase")
+and the Mali Command Stream Frontend (CSF) firmware — the supported test platforms, and how
+those pieces relate to a local fuzzing lab.
 
 ---
 
-## Document Index
+## Official documents (hosted by Arm / Intigriti, not in this repo)
 
-| File | Size | Description |
-|------|------|-------------|
-| `arm_gpu_bug_bounty_how_to_guide.pdf` | 256 KB | Main participation guide — scope, rewards, submission process |
-| `arm_gpu_bug_bounty_faq.pdf` | 56 KB | Frequently asked questions — FVP, kernels, source access, disclosure |
-| `arm_gpu_bug_bounty_device_configuration_guidelines.pdf` | 25 KB | FVP/device setup for validation — kernel configs, boot args, rootfs |
-| `arm_gpu_virtual_platform_how_to_guide.pdf` | 70 KB | Deep dive on Fixed Virtual Platforms (FVP) with Mali GPU models |
+| File | Contents |
+|------|----------|
+| `arm_gpu_bug_bounty_how_to_guide.pdf` | Scope, process, submission |
+| `arm_gpu_bug_bounty_faq.pdf` | FVP, kernels, source access, virtual environment |
+| `arm_gpu_bug_bounty_device_configuration_guidelines.pdf` | Eligible device configurations |
+| `arm_gpu_virtual_platform_how_to_guide.pdf` | Running Kbase on a virtual device |
+| `patches_for_virtual_device.zip` | Kernel/Kbase patches that enable the virtual device |
+
+Download requires a free Intigriti account (the Mali DDK additionally needs an Arm account).
 
 ---
 
 ## Quick Reference
 
-### Program Scope
-- **Target:** Mali GPU Kernel Mode Driver (Kbase), GPU firmware, Valhall/Utgard/Bifrost architectures
-- **Eligible Bugs:** UAF, OOB read/write, integer overflow, type confusion, privilege escalation, info leak
-- **Out of Scope:** Physical access required, DoS without security impact, theoretical issues without PoC
+### Program scope
 
-### Reward Tiers
-| Severity | Max Reward | Typical Bug Class |
-|----------|------------|-------------------|
-| Critical | $10,000+ | Kernel UAF/RCE, privilege escalation |
-| High | $5,000 | Kernel OOB, info leak with impact |
-| Medium | $2,500 | Kernel logic bugs, firmware issues |
-| Low | $1,000 | Minor info leaks, low-impact bugs |
+- **Firmware:** Mali Command Stream Frontend (CSF) Firmware ("CSFFW") — **Tier 2**
+- **Software:** Mali GPU Kernel Driver ("Kbase") — **Tier 3**
+- The attack must be **local, unprivileged, userspace (EL0)**.
+- A **proof-of-concept** demonstrating impact is required.
+- The bug must reproduce with an **unmodified driver and unmodified CSFFW**. Inserted
+  delays and the config changes listed in the scope are allowable.
 
-### Submission Requirements
-1. Working PoC on supported device **or** FVP
-2. Root cause analysis
-3. Affected versions (rXXpY format, e.g., r54p0, r56p0)
-4. Reproduction steps
-5. Kernel config used (`.config` or `defconfig` + fragments)
+Eligible bug classes: UAF, OOB read/write, integer overflow, type confusion, privilege
+escalation, info leak.
+
+### Reward tiers
+
+Values are maxima and are granted at Arm's discretion. Which asset sits in which tier is
+taken from the program page.
+
+| CVSS severity | Tier 2 (CSF Firmware) | Tier 3 (Kbase) |
+|---------------|-----------------------|----------------|
+| Low (0.1–3.9) | $1,000 | $500 |
+| Medium (4.0–6.9) | $3,000 | $1,500 |
+| High (7.0–8.9) | $10,000 | $5,000 |
+| Critical (9.0–9.4) | $20,000 | $10,000 |
+| Exceptional (9.5–10.0) | $20,000 | $10,000 |
+
+### Submission requirements
+
+1. Working PoC on a physical Mali device **or** a supported virtual device.
+2. Root cause analysis.
+3. Affected DDK version(s) in `rXXpY` form (e.g. `r54p0`, `r56p0`).
+4. Reproduction steps.
+5. Test-environment details (device/config used).
+
+### Out of scope (Kbase-specific highlights)
+
+- Bugs only reachable via `debugfs` (even if world-readable/writable) or privileged
+  `sysfs`/`procfs`.
+- Bugs only reachable with TEST config options.
+- Bugs in the **"dummy model"** code.
+- Bugs in the **virtual-device patches** (`patches_for_virtual_device.zip`).
+- Non-Kbase Mali drivers (Lima, Panfrost, Panthor) and Linux kernel bugs generally.
+- Vendor/OEM platform-specific code — report those to the device vendor.
+- Undefined behaviour without demonstrable exploitability, local temporary DoS, side
+  channels, fingerprinting, TZMP bypass, already-known issues, purely theoretical issues.
 
 ---
 
-## Testing Infrastructure
+## Test platforms — what actually works
 
-### Supported Platforms
-| Platform | Mali GPU | Kbase Probe | Bounty Valid |
-|----------|----------|-------------|--------------|
-| **Arm FVP + Mali Model** | ✅ Yes | ✅ Works | ✅ **Yes** |
-| **Physical Device** | ✅ Yes | ✅ Works | ✅ **Yes** |
-| **QEMU `virt`** | ❌ No | ❌ Fails | ❌ Infrastructure only |
+| Platform | Mali GPU present | Kbase probes → `/dev/mali0` | Bounty-valid |
+|----------|------------------|-----------------------------|--------------|
+| Physical device (rooted, Mali GPU) | ✅ yes | ✅ yes | ✅ yes |
+| Virtual device: Kbase built with `CONFIG_MALI_NO_MALI=y` + `patches_for_virtual_device.zip` | ➖ simulated | ✅ yes | ✅ yes* |
+| Arm FVP (Base / TC2 / etc.) | ❌ no Mali model | ❌ no | ❌ no |
+| QEMU `virt` (stock) | ❌ no | ❌ no | ❌ no |
 
-> **Critical:** QEMU `virt` has no Mali GPU model. It cannot probe Kbase. Use FVP or physical device for valid submissions.
+\* Real Kbase code paths are in scope. The dummy-model code and the virtual-device patches
+themselves are explicitly **out of scope**.
 
-### Required Kernel Configuration
+Key facts:
+
+- **Publicly available Arm FVPs do not model a Mali GPU.** The Arm Total Compute (TC2) FVP
+  documentation states outright: *"the GPU is not modelled in the FVP."* Base FVPs model
+  CPUs (AEM) and generic peripherals, not a Mali GPU.
+- Consequently, **no FVP makes Kbase probe and exposes `/dev/mali0` on its own.**
+- Arm's supported way to exercise Kbase without hardware is the **virtual device**: build
+  the real Kbase with `CONFIG_MALI_NO_MALI=y` and apply `patches_for_virtual_device.zip`.
+  This runs the real driver logic against a simulated GPU backend and can be hosted on
+  QEMU or a local VM.
+
+---
+
+## Required kernel configuration
+
+For a debug/fuzzing kernel (physical or virtual device):
+
 ```bash
-# Mandatory for kernel bug validation
-CONFIG_MALI_MIDGARD=y        # or CONFIG_MALI_BIFROST, CONFIG_MALI_VALHALL
-CONFIG_MALI_KBASE=y
+# Mali Kbase
+CONFIG_MALI_MIDGARD=y         # or CONFIG_MALI_BIFROST=y on Bifrost+/newer DDKs
+CONFIG_MALI_EXPERT=y          # required to expose MALI_NO_MALI
+CONFIG_MALI_NO_MALI=y         # virtual device: test the driver without real hardware
+CONFIG_MALI_ERROR_INJECT=y    # optional; only meaningful with MALI_NO_MALI
+
+# Debug / fuzzing
 CONFIG_DEBUG_FS=y
+CONFIG_DEBUG_INFO=y
+CONFIG_KALLSYMS=y
 CONFIG_KASAN=y
 CONFIG_KASAN_GENERIC=y
 CONFIG_KASAN_INLINE=y
 CONFIG_KCOV=y
 CONFIG_KCOV_INSTRUMENT_ALL=y
-CONFIG_DEBUG_INFO=y
-CONFIG_KALLSYMS=y
 ```
 
-### Mali Release ↔ Kernel Version Mapping
-| Mali Release | Kernel Version | Notes |
-|--------------|----------------|-------|
-| r54p0 | 5.15 LTS | Midgard/Bifrost |
-| r56p0 | 6.1 LTS | Valhall |
-| r58p0 | 6.6 LTS | Valhall (current LTS) |
-| rXXpY | Matching LTS | Check Arm release notes |
+Notes:
+
+- `CONFIG_MALI_NO_MALI` is an expert option (`depends on MALI_MIDGARD && MALI_EXPERT`).
+  `CONFIG_MALI_REAL_HW` is auto-selected as `!MALI_NO_MALI`.
+- The built module is `mali_kbase.ko`; it registers `/dev/mali<id>` (usually `/dev/mali0`).
+- On a physical device do **not** enable `MALI_NO_MALI` — use the real GPU.
+- `CONFIG_DEBUG_FS` is needed for much of the driver's introspection, but remember that
+  debugfs-only bugs are **out of scope**.
 
 ---
 
-## FVP (Fixed Virtual Platform) Setup
+## Mali DDK (Kbase) source
 
-### Obtain FVP
-1. Register at [Arm Developer Portal](https://developer.arm.com/)
-2. Download: `FVP_Base_RevC-2xAEMvA` (or newer)
-3. Mali GPU model included with Bug Bounty registration
+Kbase is out-of-tree. Arm publishes the DDK kernels on developer.arm.com:
 
-### Launch Command
+| Architecture | Download page | Archive pattern |
+|--------------|---------------|-----------------|
+| Bifrost (3rd Gen) | [Bifrost Mali 3rd Gen GPU Architecture](https://developer.arm.com/downloads/-/Bifrost%20Mali%203rd%20Gen%20GPU%20Architecture) | `BX304*-SW-99002-rXXpY-*.tar` |
+| Valhall (4th Gen) | [Valhall Mali 4th Gen GPU Architecture](https://developer.arm.com/downloads/-/Valhall%20Mali%204th%20Gen%20GPU%20Architecture) | `VX504X08X-SW-99002-rXXpY-*.tar` |
+| 5th Gen (CSF) | [Mali 5th Gen GPU Architecture](https://developer.arm.com/downloads/-/Mali%205th%20Gen%20GPU%20Architecture) | `*SW-99002-rXXpY-*.tar` |
+
+- Releases are named `rXXpY` (e.g. `r54p0`, `r56p0`). Pick one matching your target kernel
+  and GPU generation.
+- **JM vs CSF:** early Valhall GPUs are Job Manager (JM); later Valhall and 5th Gen are
+  Command Stream Frontend (CSF). Packages differ in JM/CSF support, so the program advises
+  using the **Mali 5th Gen GPU Architecture** downloads for CSF testing and targeting the
+  latest GPU when compiling (the page explicitly calls out `CONFIG_MALI_NO_MALI=y` here).
+- The driver tree is typically `driver/product/kernel/drivers/gpu/arm/midgard/`.
+
+---
+
+## Virtual-device workflow (the supported virtual environment)
+
+1. Register on Intigriti, open the Arm program page, and download
+   `arm_gpu_virtual_platform_how_to_guide.pdf` and `patches_for_virtual_device.zip`.
+2. Download a Mali DDK from the table above (Arm account may be required).
+3. Apply `patches_for_virtual_device.zip` to your kernel/DDK as described in the guide.
+4. Build the kernel and `mali_kbase.ko` with the config block above (`CONFIG_MALI_NO_MALI=y`).
+5. Boot the VM/QEMU guest and confirm the driver came up:
+   ```bash
+   dmesg | grep -i mali
+   ls -l /dev/mali0
+   ```
+6. Fuzz the ioctl surface via `/dev/mali0` (Syzkaller/LibAFL/etc.), validating with KASAN
+   and KCOV.
+7. Report only bugs in real Kbase code paths — dummy-model and virtual-device-patch bugs are
+   out of scope.
+
+---
+
+## Physical-device workflow (the other supported platform)
+
+1. Use a rooted device with an in-scope Mali DDK version.
+2. Confirm `/dev/mali0` exists and `mali_kbase` is loaded (`lsmod | grep mali`).
+3. Attach your fuzzer/debugger; validate with KASAN (debug kernel) or reproduce impact.
+4. Report the exact DDK version (`rXXpY`) and device details.
+
+---
+
+## FVP reality check
+
+This file previously showed a launch command such as:
+
 ```bash
 ./FVP_Base_RevC-2xAEMvA \
   -C bp.gpu.mali.enabled=1 \
-  -C bp.gpu.mali.version=G710 \
-  -C bp.flashloader0.fname=bl1.bin \
-  -C bp.secureflashloader.fname=fip.bin \
-  -a linux-kernel.img --dtb fdt.dtb \
-  -c "console=ttyAMA0 root=/dev/vda rw init=/bin/bash"
+  -C bp.gpu.mali.version=G710 ...
 ```
 
-### GPU Model Versions
-| Mali Arch | FVP Model String |
-|-----------|------------------|
-| Midgard (G71/G72) | `G71` |
-| Bifrost (G51/G52/G76) | `G76` |
-| Valhall (G77/G78/G68/G710) | `G710` |
+Those are **not real FVP parameters**, and no Mali GPU model is attached this way. Real FVP
+invocations configure CPUs/clusters and peripherals, for example:
 
----
-
-## Relevance to This Lab
-
-### What This Lab Provides (Infrastructure Validation)
-✅ Kernel build with KCOV+KASAN (`kcov-kasan` profile)  
-✅ ARM64 QEMU guest boot (`virt` machine, TCG)  
-✅ Syzkaller framework (host tools + config validation)  
-✅ LibAFL harness (standalone, structured input format)  
-✅ Artifact manifests + reproducibility  
-
-### What This Lab Does NOT Provide (Bounty Blockers)
-❌ Mali GPU hardware model → Kbase never probes  
-❌ `/dev/mali0` in guest → fuzzers cannot reach driver  
-❌ Kbase source code → requires Arm license/NDA  
-❌ Physical device / FVP access → required for valid PoC  
-
-### Path to Bounty Submission
-```
-Current Lab (QEMU virt)          →  Arm FVP + Mali Model  →  Physical Device
-   Infrastructure only                 Valid PoC platform      Valid PoC platform
-   No /dev/mali0                       Has /dev/mali0          Has /dev/mali0
-   Kbase build fails                   Kbase loads             Kbase loads
-   Syzkaller/LibAFL ready              Fuzz Kbase              Fuzz Kbase
-                                         │                        │
-                                         └─────→ Submit to Arm Bug Bounty
-```
-
----
-
-## Integration with This Repository
-
-### Current Configs Match Bounty Requirements
 ```bash
-# kernel/configs/kcov-kasan.config already contains:
-CONFIG_KASAN=y
-CONFIG_KASAN_GENERIC=y
-CONFIG_KASAN_INLINE=y
-CONFIG_KCOV=y
-CONFIG_KCOV_INSTRUMENT_ALL=y
-CONFIG_DEBUG_FS=y
-CONFIG_DEBUG_INFO=y
-CONFIG_KALLSYMS=y
+./FVP_Base_RevC-2xAEMvA \
+  -C pctl.startup=0.0.0.0 \
+  -C cluster0.NUM_CORES=4 \
+  -C bp.secureflashloader.fname=tf-bl1.bin \
+  -C bp.flashloader0.fname=fip.bin \
+  -C bp.virtioblockdevice.image_path=rootfs.img \
+  --data cluster0.cpu0=Image@0x80080000
 ```
 
-### To Adapt for FVP/Device
-1. **Add Mali Kconfig fragments** to `kernel/configs/kcov-kasan.config`:
-   ```bash
-   CONFIG_MALI_MIDGARD=y      # or BIFROST/VALHALL per target GPU
-   CONFIG_MALI_KBASE=y
-   CONFIG_MALI_KBASE_PLATFORM_CONFIG=y
-   ```
-
-2. **Update boot args** in `scripts/boot_qemu.sh`:
-   ```bash
-   # For FVP/device with rootfs on disk:
-   -append "console=ttyAMA0 root=/dev/vda rw init=/bin/bash nokaslr"
-   ```
-
-3. **Provide Kbase source** (licensed):
-   ```bash
-   cp /path/to/kbase-src.tar.xz workdir/
-   make build-kbase PROFILE=kcov-kasan
-   ```
+Even then there is no Mali GPU in the model, so Kbase has nothing to bind to. Use a physical
+device or the virtual-device setup above.
 
 ---
 
-## Program Links
+## Relevance to this lab
 
-- **Bug Bounty Portal:** https://www.arm.com/security-on-arm/bug-bounty
-- **FVP Downloads:** https://developer.arm.com/tools-and-software/simulation-models/fixed-virtual-platforms
-- **Mali GPU Docs:** https://developer.arm.com/ip-products/graphics-and-multimedia/mali-gpus
-- **Kernel Configs:** https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/arch/arm64/configs
+This repository currently contains **only this documentation summary** — no kernel configs,
+boot scripts, Makefile targets, Syzkaller/LibAFL harnesses, or artifact manifests are
+present. Treat the items below as the intended lab shape, subject to what is actually added.
+
+### What a local lab can provide
+
+- ✅ Kernel build with KASAN + KCOV.
+- ✅ ARM64 guest boot (QEMU `virt`, TCG).
+- ✅ Syzkaller framework (host tools + config validation).
+- ✅ LibAFL harness (standalone, structured input format).
+
+### Bounty blockers for a stock QEMU `virt` lab
+
+- ❌ No Mali GPU in QEMU `virt` or in public Arm FVPs → Kbase never probes.
+- ❌ No `/dev/mali0` without the virtual-device setup → fuzzers cannot reach the driver.
+- ❌ Kbase source requires an Arm account/download.
+- ❌ Physical device access is the alternative if virtual testing is not used.
+
+### Path to a bounty submission
+
+```
+Stock QEMU virt            →   Virtual device (NO_MALI)      →   Physical device
+  no /dev/mali0                 Kbase + patches_for_             real GPU, /dev/mali0
+  Kbase cannot probe            virtual_device.zip               KASAN via debug kernel
+  docs/tooling only             Kbase probes, /dev/mali0                │
+                                     │                                  │
+                                     └──────────→ Submit to ────────────┘
+                                                  Arm Bug Bounty
+                                                  (Intigriti)
+```
 
 ---
 
-## Summary for Researchers
+## Program links
 
-| Step | Action | Tool |
-|------|--------|------|
-| 1 | Register for Arm GPU Bug Bounty | Arm Developer Portal |
-| 2 | Obtain FVP + Mali GPU model | Arm Developer Portal |
-| 3 | Get Kbase source under NDA | Arm partner program |
-| 4 | Build kernel with KCOV+KASAN + Mali config | `make build-kernel PROFILE=kcov-kasan` |
-| 5 | Build Kbase module + userspace | `make build-kbase PROFILE=kcov-kasan` |
-| 6 | Boot on FVP/device with `/dev/mali0` | FVP launch script |
-| 7 | Fuzz with Syzkaller/LibAFL | `make syzkaller-check` / `make build-libafl` |
-| 8 | Validate bug with KASAN report + KCOV trace | `verify_kasan.sh` + `verify_kcov.sh` |
-| 9 | Submit PoC + root cause to Arm | Bug Bounty portal |
+- **Program (Intigriti):** https://app.intigriti.com/programs/arm/arm/detail
+- **Mali 5th Gen GPU Architecture (CSF) DDK:** https://developer.arm.com/downloads/-/Mali%205th%20Gen%20GPU%20Architecture
+- **Valhall Mali 4th Gen GPU Architecture DDK:** https://developer.arm.com/downloads/-/Valhall%20Mali%204th%20Gen%20GPU%20Architecture
+- **Bifrost Mali 3rd Gen GPU Architecture DDK:** https://developer.arm.com/downloads/-/Bifrost%20Mali%203rd%20Gen%20GPU%20Architecture
+- **TF-A FVP documentation (real FVP usage):** https://trustedfirmware-a.readthedocs.io/en/latest/plat/arm/fvp/index.html
+- **TC2 FVP docs ("the GPU is not modelled in the FVP"):** https://arm-reference-solutions-docs.readthedocs.io/en/tc2-2022.12.07/docs/totalcompute/tc2/user-guide.html
 
 ---
 
-*Generated from Arm GPU Bug Bounty Program documentation (doc.zip).  
-See individual PDFs for complete details.*
+## Summary for researchers
+
+| Step | Action | Source |
+|------|--------|--------|
+| 1 | Register on Intigriti; read the program page + PDFs | Intigriti |
+| 2 | Pick a platform: physical Mali device **or** virtual device | — |
+| 3 | (Virtual) download DDK + `patches_for_virtual_device.zip` | Arm / Intigriti |
+| 4 | Build kernel + `mali_kbase.ko` (add `CONFIG_MALI_NO_MALI=y` for virtual) | DDK + kernel |
+| 5 | Boot and confirm `/dev/mali0` and `mali_kbase` load | `dmesg`, `ls` |
+| 6 | Fuzz the ioctl surface via `/dev/mali0` | Syzkaller/LibAFL |
+| 7 | Validate with KASAN report + KCOV trace | your tooling |
+| 8 | Submit PoC + root cause + DDK version + config to Arm | Intigriti |
+
+---
+
+## Revision notes
+
+Corrections applied to the previous version of this file:
+
+- Reward tiers fixed: Kbase is **Tier 3** ($500–$10,000); CSF firmware is **Tier 2**
+  ($1,000–$20,000). The old table used invented tiers.
+- Removed fictional FVP launch flags (`bp.gpu.mali.enabled`, `bp.gpu.mali.version`) and the
+  "GPU Model Versions" table. Replaced with the real supported virtual-device route
+  (`CONFIG_MALI_NO_MALI=y` + `patches_for_virtual_device.zip`).
+- Noted that public Arm FVPs — including TC2 — do **not** model a Mali GPU, so no FVP alone
+  yields `/dev/mali0`.
+- Fixed Kconfig symbols: removed the non-existent `CONFIG_MALI_KBASE` and
+  `CONFIG_MALI_KBASE_PLATFORM_CONFIG`; added `CONFIG_MALI_EXPERT` and `CONFIG_MALI_NO_MALI`.
+- Replaced the speculative "Mali release ↔ kernel version" table with the actual DDK
+  download pages and archive naming.
+- Reframed the "lab provides" list to reflect that this repository currently ships only
+  documentation.
+
+*Sources: Arm/Intigriti program page, Arm reference-solutions and TF-A documentation
+(retrieved 2026-10-12).*
