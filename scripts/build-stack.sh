@@ -7,11 +7,12 @@
 #
 #   BL1/BL2/BL31 (TF-A fvp) -> Linux kernel Image (BL33) -> BusyBox initramfs
 #
-#   FVP flash:  bl1.bin via bp.secureflashloader, fip.bin via bp.flashloader0
+#   FVP flash:  fip.bin via bp.secureflashloader + bp.flashloader0 (no bl1.bin
+#   produced by modern TF-A's fvp platform with RESET_TO_BL31=1)
 #   RAM layout: Image@0x80080000, DT@0x82000000, initramfs@0x84000000
 #
 # Produces, under --out (default out/fvp-stack/):
-#   bl1.bin, fip.bin       TF-A fvp, ARM_LINUX_KERNEL_AS_BL33=1
+#   fip.bin       TF-A fvp, ARM_LINUX_KERNEL_AS_BL33=1
 #   rootfs/                busybox root filesystem staging dir
 #   rootfs.cpio.gz         initramfs with mali_kbase.ko bundled
 #   stack.json             build summary (for run-fvp.sh)
@@ -81,7 +82,7 @@ mkdir -p "$REFSRC" "$OUT"
 # ---- 1. TF-A (fvp platform, kernel as BL33) --------------------------------
 if [ "$SKIP_TFA" -eq 1 ]; then
 	info "skipping TF-A build"
-elif [ -f "$OUT/bl1.bin" ] && [ -f "$OUT/fip.bin" ]; then
+elif [ -f "$OUT/fip.bin" ]; then
 	info "reusing existing firmware in $OUT"
 else
 	TFASRC="$REFSRC/tf-a"
@@ -92,10 +93,10 @@ else
 	info "building TF-A fvp (ARM_LINUX_KERNEL_AS_BL33=1, BL33=kernel)"
 	make -C "$TFASRC" CROSS_COMPILE="$CROSS_COMPILE" PLAT=fvp \
 		ARM_LINUX_KERNEL_AS_BL33=1 BL33="$(realpath "$KIMAGE")" \
-		-j"$JOBS" fip
-	cp "$TFASRC/build/fvp/release/bl1.bin" "$OUT/bl1.bin"
+		RESET_TO_BL31=1 -j"$JOBS" fip
+	# TF-A fvp (RESET_TO_BL31=1) ships fip.bin only; BL1 is not emitted.
 	cp "$TFASRC/build/fvp/release/fip.bin" "$OUT/fip.bin"
-	info "firmware: bl1.bin, fip.bin -> $OUT"
+	info "firmware: fip.bin -> $OUT"
 fi
 
 # ---- 2. BusyBox ------------------------------------------------------------
@@ -109,14 +110,18 @@ else
 		info "cloning busybox (mirror)"
 		git clone --depth 1 -q https://github.com/mirror/busybox.git "$BBSRC"
 	fi
-	info "building static busybox"
+	info "building static busybox (arm64: STATIC=y, TC/SHA-HWACCEL disabled)"
 	make -C "$BBSRC" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" defconfig >/dev/null
-	if [ -x "$BBSRC/scripts/config" ]; then
-		"$BBSRC/scripts/config" -f "$BBSRC/.config" -e STATIC
-	else
-		sed -i 's/^# CONFIG_STATIC is not set$/CONFIG_STATIC=y/' "$BBSRC/.config"
-		grep -q '^CONFIG_STATIC=y' "$BBSRC/.config" || echo 'CONFIG_STATIC=y' >> "$BBSRC/.config"
-	fi
+	CFG="$BBSRC/.config"
+	# Static binary: required for a standalone initramfs (no dynamic loader).
+	grep -q '^CONFIG_STATIC=y' "$CFG" \
+		|| sed -i 's/^# CONFIG_STATIC is not set$/CONFIG_STATIC=y/' "$CFG"
+	# arm64 cross fixes: x86-only applets/features that fail to build with
+	# aarch64 GCC 13 + modern kernel headers (tc vs pkt_sched uapi breakage,
+	# and SHA-NI intrinsics referencing x86 symbols).
+	sed -i 's/^CONFIG_TC=y$/# CONFIG_TC is not set/' "$CFG"
+	sed -i 's/^CONFIG_SHA1_HWACCEL=y$/# CONFIG_SHA1_HWACCEL is not set/' "$CFG"
+	sed -i 's/^CONFIG_SHA256_HWACCEL=y$/# CONFIG_SHA256_HWACCEL is not set/' "$CFG"
 	make -C "$BBSRC" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" oldconfig >/dev/null || true
 	make -C "$BBSRC" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" -j"$JOBS"
 	rm -rf "$OUT/rootfs"
@@ -167,7 +172,7 @@ cat > "$OUT/stack.json" <<EOF
 {
   "stack": "modern TF-A fvp, kernel as BL33",
   "driver": "$DRIVER",
-  "bl1": "bl1.bin",
+  "bl1": "fip.bin",
   "fip": "fip.bin",
   "kernel_image": "$KIMAGE",
   "kernel_addr": "0x80080000",
@@ -181,5 +186,5 @@ EOF
 
 echo
 echo "Boot stack under $OUT/:"
-ls -la "$OUT"/bl1.bin "$OUT"/fip.bin "$OUT"/rootfs.cpio.gz
+ls -la "$OUT"/fip.bin "$OUT"/rootfs.cpio.gz
 info "use scripts/run-fvp.sh --driver $DRIVER to boot"

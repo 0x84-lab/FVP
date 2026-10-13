@@ -139,7 +139,7 @@ make -C "$SRC_TREE" O="$BUILD" -j"$JOBS" INSTALL_MOD_PATH="$TARGET/modules" modu
 info "collecting artifacts"
 cp "$BUILD/arch/arm64/boot/Image"                                   "$TARGET/Image"
 cp "$BUILD/arch/arm64/boot/dts/arm/fvp-base-revc.dtb"               "$TARGET/fvp-base-revc.dtb"
-cp "$BUILD/drivers/gpu/arm/mali_kbase.ko"                            "$TARGET/mali_kbase.ko"
+cp "$BUILD/drivers/gpu/arm/midgard/mali_kbase.ko"                   "$TARGET/mali_kbase.ko"
 
 # ---- 5. Baseline dummy-mali DTB (initrd props are added at boot time) ------
 "$SCRIPT_DIR/build-dtb.sh" --force \

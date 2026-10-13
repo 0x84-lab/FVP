@@ -86,7 +86,6 @@ detect_fvp() {
 FVP_BIN="$(detect_fvp)" || die "FVP model not found (install the Arm FVP or set --fvp-bin / FVP_BIN)"
 
 # ---- Inputs ---------------------------------------------------------------
-[ -f "$STACK/bl1.bin" ]  || die "missing $STACK/bl1.bin (run scripts/build-stack.sh)"
 [ -f "$STACK/fip.bin" ]  || die "missing $STACK/fip.bin (run scripts/build-stack.sh)"
 [ -f "$KERNEL/Image" ]   || die "missing $KERNEL/Image (run scripts/build-kernel.sh)"
 [ -f "$KERNEL/fvp-base-revc.dtb" ] || die "missing $KERNEL/fvp-base-revc.dtb"
@@ -136,7 +135,9 @@ CMD+=( -C bp.pl011_uart0.out_file="$UART0" )
 CMD+=( -C bp.pl011_uart1.untimed_fifos=1 )
 CMD+=( -C bp.pl011_uart1.unbuffered_output=1 )
 CMD+=( -C bp.pl011_uart1.out_file="$UART1" )
-CMD+=( -C bp.secureflashloader.fname="$STACK/bl1.bin" )
+# TF-A fvp with ARM_LINUX_KERNEL_AS_BL33 + RESET_TO_BL31=1 produces fip.bin
+# but no bl1.bin; use fip.bin as the secure flashloader (common on modern TF-A)
+CMD+=( -C bp.secureflashloader.fname="$STACK/fip.bin" )
 CMD+=( -C bp.flashloader0.fname="$STACK/fip.bin" )
 CMD+=( --data cluster0.cpu0="$KERNEL/Image@0x80080000" )
 CMD+=( --data cluster0.cpu0="$DTB@0x82000000" )
